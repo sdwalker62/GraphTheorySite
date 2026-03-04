@@ -10,11 +10,20 @@
 	selectedAlgorithm.subscribe((a) => (algorithm = a));
 	graphConfig.subscribe((c) => (vertexCount = c.vertexCount));
 
+	// Edge weight editing state
+	let editingEdgeIndex: number | null = $state(null);
+	let editValue = $state('');
+	let inputEl: HTMLInputElement | null = $state(null);
+	let editPos = $state({ x: 0, y: 0 });
+
 	// SVG viewport dimensions
 	const svgWidth = 800;
 	const svgHeight = 600;
 	const nodeRadius = $derived(Math.max(8, Math.min(20, 200 / Math.sqrt(vertexCount))));
 	const arrowSize = 8;
+
+	// We need a reference to the SVG element to convert screen coordinates
+	let svgEl: SVGSVGElement | null = $state(null);
 
 	function vx(v: { x: number }): number {
 		return v.x * svgWidth;
@@ -45,9 +54,67 @@
 	function edgeMidpoint(sx: number, sy: number, tx: number, ty: number) {
 		return { x: (sx + tx) / 2, y: (sy + ty) / 2 };
 	}
+
+	/**
+	 * Convert SVG viewBox coordinates to screen pixel coordinates
+	 * for positioning the HTML input overlay.
+	 */
+	function svgToScreen(svgX: number, svgY: number): { x: number; y: number } {
+		if (!svgEl) return { x: 0, y: 0 };
+		const pt = svgEl.createSVGPoint();
+		pt.x = svgX;
+		pt.y = svgY;
+		const ctm = svgEl.getScreenCTM();
+		if (!ctm) return { x: 0, y: 0 };
+		const screenPt = pt.matrixTransform(ctm);
+		// Get position relative to the SVG element's parent container
+		const rect = svgEl.getBoundingClientRect();
+		return {
+			x: screenPt.x - rect.left,
+			y: screenPt.y - rect.top
+		};
+	}
+
+	function startEditing(edgeIndex: number, midX: number, midY: number) {
+		if (!graph || !graph.weighted) return;
+		editingEdgeIndex = edgeIndex;
+		editValue = String(graph.edges[edgeIndex].weight ?? 0);
+		editPos = svgToScreen(midX, midY);
+
+		// Focus the input after it renders
+		requestAnimationFrame(() => {
+			inputEl?.focus();
+			inputEl?.select();
+		});
+	}
+
+	function commitEdit() {
+		if (editingEdgeIndex === null || !graph) return;
+
+		const parsed = parseInt(editValue, 10);
+		if (!isNaN(parsed)) {
+			// Update the edge weight via the store
+			const newEdges = [...graph.edges];
+			newEdges[editingEdgeIndex] = { ...newEdges[editingEdgeIndex], weight: parsed };
+			graphData.set({ ...graph, edges: newEdges });
+		}
+		editingEdgeIndex = null;
+	}
+
+	function cancelEdit() {
+		editingEdgeIndex = null;
+	}
+
+	function onEditKeydown(e: KeyboardEvent) {
+		if (e.key === 'Enter') {
+			commitEdit();
+		} else if (e.key === 'Escape') {
+			cancelEdit();
+		}
+	}
 </script>
 
-<div class="flex h-full w-full items-center justify-center rounded-box bg-base-100 border border-base-300">
+<div class="relative flex h-full w-full items-center justify-center rounded-box bg-base-100 border border-base-300">
 	{#if !graph}
 		<div class="text-center text-base-content/40">
 			<svg
@@ -69,6 +136,7 @@
 		</div>
 	{:else}
 		<svg
+			bind:this={svgEl}
 			viewBox="0 0 {svgWidth} {svgHeight}"
 			class="h-full w-full"
 			xmlns="http://www.w3.org/2000/svg"
@@ -93,7 +161,7 @@
 			{/if}
 
 			<!-- Edges -->
-			{#each graph.edges as edge}
+			{#each graph.edges as edge, i}
 				{@const sv = graph.vertices[edge.source]}
 				{@const tv = graph.vertices[edge.target]}
 				{@const pts = edgeEndpoints(vx(sv), vy(sv), vx(tv), vy(tv))}
@@ -108,23 +176,31 @@
 					marker-end={graph.directed ? 'url(#arrowhead)' : undefined}
 				/>
 				{#if edge.weight !== null}
-					<rect
-						x={mid.x - 12}
-						y={mid.y - 8}
-						width="24"
-						height="16"
-						rx="3"
-						class="fill-base-200"
-					/>
-					<text
-						x={mid.x}
-						y={mid.y + 1}
-						text-anchor="middle"
-						dominant-baseline="middle"
-						class="fill-base-content text-[10px] font-mono font-semibold"
+					<!-- svelte-ignore a11y_click_events_have_key_events -->
+					<!-- svelte-ignore a11y_no_static_element_interactions -->
+					<g
+						class="cursor-pointer"
+						onclick={() => startEditing(i, mid.x, mid.y)}
 					>
-						{edge.weight}
-					</text>
+						<rect
+							x={mid.x - 14}
+							y={mid.y - 10}
+							width="28"
+							height="20"
+							rx="4"
+							class="fill-base-200 stroke-base-300 transition-colors hover:fill-primary/20 hover:stroke-primary"
+							stroke-width="1"
+						/>
+						<text
+							x={mid.x}
+							y={mid.y + 1}
+							text-anchor="middle"
+							dominant-baseline="middle"
+							class="fill-base-content text-[10px] font-mono font-semibold pointer-events-none select-none"
+						>
+							{edge.weight}
+						</text>
+					</g>
 				{/if}
 			{/each}
 
@@ -158,5 +234,32 @@
 				</text>
 			{/if}
 		</svg>
+
+		<!-- Inline weight editor overlay -->
+		{#if editingEdgeIndex !== null}
+			<!-- svelte-ignore a11y_click_events_have_key_events -->
+			<!-- svelte-ignore a11y_no_static_element_interactions -->
+			<div
+				class="absolute inset-0"
+				onclick={cancelEdit}
+			></div>
+			<input
+				bind:this={inputEl}
+				type="number"
+				class="input input-xs input-bordered absolute w-16 text-center font-mono font-semibold z-10"
+				style="left: {editPos.x - 32}px; top: {editPos.y - 14}px;"
+				value={editValue}
+				oninput={(e) => (editValue = e.currentTarget.value)}
+				onblur={commitEdit}
+				onkeydown={onEditKeydown}
+			/>
+		{/if}
+
+		<!-- Hint for weighted graphs -->
+		{#if graph.weighted}
+			<div class="absolute bottom-2 left-2 text-xs text-base-content/40">
+				Click a weight to edit
+			</div>
+		{/if}
 	{/if}
 </div>
