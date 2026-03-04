@@ -139,8 +139,15 @@ export const graphConfig = writable<GraphConfig>({
 export const selectedAlgorithm = writable<Algorithm | null>(null);
 
 import type { Graph } from '$lib/graph/types';
+import type { AlgorithmStep } from '$lib/graph/algorithm';
 
 export const graphData = writable<Graph | null>(null);
+
+/** The full list of recorded steps from the last algorithm run */
+export const algorithmSteps = writable<AlgorithmStep[]>([]);
+
+/** Starting vertex selected by the user (for algorithms that need one) */
+export const startVertex = writable<number>(0);
 
 export const currentStep = writable<number>(0);
 export const totalSteps = writable<number>(0);

@@ -1,5 +1,5 @@
 <script lang="ts">
-	let darkMode = $state(false);
+	let darkMode = $state(true);
 
 	function toggleTheme() {
 		darkMode = !darkMode;
