@@ -1,28 +1,35 @@
 <script lang="ts">
-	import { currentStep, totalSteps, isPlaying, algorithmSteps } from '$lib/stores/graphStore';
+	import { currentStep, totalSteps, isPlaying, algorithmSteps, playbackSpeed } from '$lib/stores/graphStore';
 	import type { AlgorithmStep } from '$lib/graph/algorithm';
 
 	let step = $state(0);
 	let total = $state(0);
 	let playing = $state(false);
 	let steps: AlgorithmStep[] = $state([]);
+	let speed = $state(500);
 
 	currentStep.subscribe((s) => (step = s));
 	totalSteps.subscribe((t) => (total = t));
 	isPlaying.subscribe((p) => (playing = p));
 	algorithmSteps.subscribe((s) => (steps = s));
+	playbackSpeed.subscribe((s) => (speed = s));
 
 	const hasSteps = $derived(steps.length > 0);
 
 	let interval: ReturnType<typeof setInterval> | null = null;
 
-	// React to external isPlaying changes (e.g. auto-play from Run button)
+	// React to playing state and speed changes
 	$effect(() => {
-		if (playing && !interval) {
+		// Access both dependencies so the effect re-runs on either change
+		const _speed = speed;
+
+		if (playing) {
 			startInterval();
-		} else if (!playing && interval) {
-			clearInterval(interval);
-			interval = null;
+		} else {
+			if (interval) {
+				clearInterval(interval);
+				interval = null;
+			}
 		}
 	});
 
@@ -36,7 +43,7 @@
 				}
 				return s + 1;
 			});
-		}, 500);
+		}, speed);
 	}
 
 	function play() {

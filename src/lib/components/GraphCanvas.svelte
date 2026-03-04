@@ -25,11 +25,20 @@
 	let inputEl: HTMLInputElement | null = $state(null);
 	let editPos = $state({ x: 0, y: 0 });
 
-	// SVG viewport dimensions
-	const svgWidth = 800;
-	const svgHeight = 600;
-	const nodeRadius = $derived(Math.max(8, Math.min(20, 200 / Math.sqrt(vertexCount))));
-	const arrowSize = 8;
+	// SVG viewport dimensions — scale up for large graphs to give vertices more room
+	const svgWidth = $derived(vertexCount > 30 ? 800 + (vertexCount - 30) * 6 : 800);
+	const svgHeight = $derived(vertexCount > 30 ? 600 + (vertexCount - 30) * 4.5 : 600);
+
+	// --- Adaptive sizing based on vertex count ---
+	const nodeRadius = $derived(Math.max(5, Math.min(20, 160 / Math.sqrt(vertexCount))));
+	const edgeStrokeBase = $derived(Math.max(0.6, Math.min(1.5, 10 / Math.sqrt(vertexCount))));
+	const arrowSize = $derived(Math.max(3, Math.min(8, 50 / Math.sqrt(vertexCount))));
+	const weightBadgeW = $derived(Math.max(16, Math.min(28, 180 / Math.sqrt(vertexCount))));
+	const weightBadgeH = $derived(Math.max(11, Math.min(20, 130 / Math.sqrt(vertexCount))));
+	const weightFontSize = $derived(Math.max(6, Math.min(10, 65 / Math.sqrt(vertexCount))));
+	const labelFontSize = $derived(nodeRadius * 0.85);
+	// Edge opacity decreases for very dense graphs
+	const edgeOpacity = $derived(Math.max(0.3, Math.min(1.0, 6 / Math.sqrt(vertexCount))));
 
 	let svgEl: SVGSVGElement | null = $state(null);
 
@@ -39,6 +48,19 @@
 
 	function vy(v: { y: number }): number {
 		return v.y * svgHeight;
+	}
+
+	/**
+	 * Compute a slight curve offset for an edge so overlapping/nearby edges
+	 * are visually distinguishable. Uses a deterministic hash of (source, target).
+	 */
+	function edgeCurveOffset(source: number, target: number, sx: number, sy: number, tx: number, ty: number): number {
+		if (vertexCount <= 12) return 0; // no curve needed for small graphs
+		// Subtle curve – only enough to disambiguate parallel edges, not add clutter
+		const hash = ((source * 71) ^ (target * 113)) % 5;
+		const sign = (source + target) % 2 === 0 ? 1 : -1;
+		const magnitude = Math.max(5, Math.min(15, vertexCount * 0.15));
+		return sign * (hash / 5) * magnitude;
 	}
 
 	function edgeEndpoints(sx: number, sy: number, tx: number, ty: number) {
@@ -51,13 +73,29 @@
 		return {
 			x1: sx + ux * nodeRadius,
 			y1: sy + uy * nodeRadius,
-			x2: tx - ux * nodeRadius,
-			y2: ty - uy * nodeRadius
+			x2: tx - ux * (nodeRadius + (graph?.directed ? arrowSize * 0.6 : 0)),
+			y2: ty - uy * (nodeRadius + (graph?.directed ? arrowSize * 0.6 : 0))
 		};
 	}
 
-	function edgeMidpoint(sx: number, sy: number, tx: number, ty: number) {
-		return { x: (sx + tx) / 2, y: (sy + ty) / 2 };
+	function edgeMidpoint(sx: number, sy: number, tx: number, ty: number, offset: number) {
+		const mx = (sx + tx) / 2;
+		const my = (sy + ty) / 2;
+		if (offset === 0) return { x: mx, y: my };
+		// Perpendicular offset
+		const dx = tx - sx;
+		const dy = ty - sy;
+		const dist = Math.sqrt(dx * dx + dy * dy);
+		if (dist < 0.001) return { x: mx, y: my };
+		return { x: mx + (-dy / dist) * offset, y: my + (dx / dist) * offset };
+	}
+
+	function edgePath(x1: number, y1: number, x2: number, y2: number, offset: number): string {
+		if (offset === 0) {
+			return `M${x1},${y1} L${x2},${y2}`;
+		}
+		const mid = edgeMidpoint(x1, y1, x2, y2, offset);
+		return `M${x1},${y1} Q${mid.x},${mid.y} ${x2},${y2}`;
 	}
 
 	function svgToScreen(svgX: number, svgY: number): { x: number; y: number } {
@@ -138,13 +176,22 @@
 		return 'stroke-base-content/20';
 	}
 
-	function getEdgeWidth(source: number, target: number): string {
-		if (!step) return '1.5';
+	function getEdgeWidth(source: number, target: number): number {
+		if (!step) return edgeStrokeBase;
 		const ek = edgeKey(source, target);
 		const ekRev = edgeKey(target, source);
-		if (step.activeEdges.has(ek) || step.activeEdges.has(ekRev)) return '3';
-		if (step.treeEdges.has(ek) || step.treeEdges.has(ekRev)) return '2.5';
-		return '1.5';
+		if (step.activeEdges.has(ek) || step.activeEdges.has(ekRev)) return edgeStrokeBase * 2.5;
+		if (step.treeEdges.has(ek) || step.treeEdges.has(ekRev)) return edgeStrokeBase * 2;
+		return edgeStrokeBase;
+	}
+
+	function getEdgeOpacity(source: number, target: number): number {
+		if (!step) return edgeOpacity;
+		const ek = edgeKey(source, target);
+		const ekRev = edgeKey(target, source);
+		if (step.activeEdges.has(ek) || step.activeEdges.has(ekRev)) return 1;
+		if (step.treeEdges.has(ek) || step.treeEdges.has(ekRev)) return 1;
+		return edgeOpacity * 0.6;
 	}
 </script>
 
@@ -192,22 +239,24 @@
 							id="arrowhead"
 							markerWidth={arrowSize}
 							markerHeight={arrowSize}
-							refX={arrowSize}
+							refX={arrowSize * 0.9}
 							refY={arrowSize / 2}
 							orient="auto"
+							markerUnits="userSpaceOnUse"
 						>
 							<polygon
 								points="0 0, {arrowSize} {arrowSize / 2}, 0 {arrowSize}"
-								class="fill-base-content/70"
+								class="fill-base-content/50"
 							/>
 						</marker>
 						<marker
 							id="arrowhead-active"
 							markerWidth={arrowSize}
 							markerHeight={arrowSize}
-							refX={arrowSize}
+							refX={arrowSize * 0.9}
 							refY={arrowSize / 2}
 							orient="auto"
+							markerUnits="userSpaceOnUse"
 						>
 							<polygon
 								points="0 0, {arrowSize} {arrowSize / 2}, 0 {arrowSize}"
@@ -218,9 +267,10 @@
 							id="arrowhead-tree"
 							markerWidth={arrowSize}
 							markerHeight={arrowSize}
-							refX={arrowSize}
+							refX={arrowSize * 0.9}
 							refY={arrowSize / 2}
 							orient="auto"
+							markerUnits="userSpaceOnUse"
 						>
 							<polygon
 								points="0 0, {arrowSize} {arrowSize / 2}, 0 {arrowSize}"
@@ -234,19 +284,25 @@
 				{#each graph.edges as edge, i}
 					{@const sv = graph.vertices[edge.source]}
 					{@const tv = graph.vertices[edge.target]}
-					{@const pts = edgeEndpoints(vx(sv), vy(sv), vx(tv), vy(tv))}
-					{@const mid = edgeMidpoint(vx(sv), vy(sv), vx(tv), vy(tv))}
+					{@const sx = vx(sv)}
+					{@const sy = vy(sv)}
+					{@const tx = vx(tv)}
+					{@const ty = vy(tv)}
+					{@const pts = edgeEndpoints(sx, sy, tx, ty)}
+					{@const curveOff = edgeCurveOffset(edge.source, edge.target, sx, sy, tx, ty)}
+					{@const mid = edgeMidpoint(sx, sy, tx, ty, curveOff)}
 					{@const eStroke = getEdgeStroke(edge.source, edge.target)}
 					{@const eWidth = getEdgeWidth(edge.source, edge.target)}
+					{@const eOpacity = getEdgeOpacity(edge.source, edge.target)}
 					{@const ek = edgeKey(edge.source, edge.target)}
 					{@const ekRev = edgeKey(edge.target, edge.source)}
-					<line
-						x1={pts.x1}
-						y1={pts.y1}
-						x2={pts.x2}
-						y2={pts.y2}
+					{@const pathD = edgePath(pts.x1, pts.y1, pts.x2, pts.y2, curveOff)}
+					<path
+						d={pathD}
+						fill="none"
 						class={eStroke}
 						stroke-width={eWidth}
+						opacity={eOpacity}
 						marker-end={graph.directed
 							? step && (step.activeEdges.has(ek) || step.activeEdges.has(ekRev))
 								? 'url(#arrowhead-active)'
@@ -263,20 +319,21 @@
 							onclick={() => startEditing(i, mid.x, mid.y)}
 						>
 							<rect
-								x={mid.x - 14}
-								y={mid.y - 10}
-								width="28"
-								height="20"
-								rx="4"
+								x={mid.x - weightBadgeW / 2}
+								y={mid.y - weightBadgeH / 2}
+								width={weightBadgeW}
+								height={weightBadgeH}
+								rx="3"
 								class="fill-base-200 stroke-base-300 transition-colors hover:fill-primary/20 hover:stroke-primary"
-								stroke-width="1"
+								stroke-width="0.8"
 							/>
 							<text
 								x={mid.x}
 								y={mid.y + 1}
 								text-anchor="middle"
 								dominant-baseline="middle"
-								class="fill-base-content text-[10px] font-mono font-semibold pointer-events-none select-none"
+								class="fill-base-content font-mono font-semibold pointer-events-none select-none"
+								font-size={weightFontSize}
 							>
 								{edge.weight}
 							</text>
@@ -301,7 +358,7 @@
 						text-anchor="middle"
 						dominant-baseline="middle"
 						class="{vertexTextFill(vertex.id)} font-bold transition-colors duration-200"
-						font-size={nodeRadius * 0.9}
+						font-size={labelFontSize}
 					>
 						{vertex.label}
 					</text>

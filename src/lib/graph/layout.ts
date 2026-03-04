@@ -1,8 +1,14 @@
 import type { Graph } from './types';
 
 /**
- * Apply a simple force-directed layout to position vertices.
+ * Apply a force-directed layout to position vertices.
  * Modifies vertex x/y in place. Coordinates are normalized to [0, 1].
+ *
+ * Uses a Fruchterman-Reingold style algorithm with:
+ * - Grid-based initial placement for large graphs
+ * - Strong short-range repulsion to prevent overlaps
+ * - Adaptive temperature schedule
+ * - Post-processing overlap removal pass
  */
 export function layoutGraph(graph: Graph, width = 1, height = 1): void {
 	const n = graph.vertices.length;
@@ -14,14 +20,30 @@ export function layoutGraph(graph: Graph, width = 1, height = 1): void {
 		return;
 	}
 
-	// Initialize positions in a circle
-	for (let i = 0; i < n; i++) {
-		const angle = (2 * Math.PI * i) / n;
-		graph.vertices[i].x = width / 2 + (width * 0.35) * Math.cos(angle);
-		graph.vertices[i].y = height / 2 + (height * 0.35) * Math.sin(angle);
+	// --- Initial placement ---
+	if (n <= 20) {
+		// Circle for small graphs
+		for (let i = 0; i < n; i++) {
+			const angle = (2 * Math.PI * i) / n;
+			graph.vertices[i].x = width / 2 + (width * 0.4) * Math.cos(angle);
+			graph.vertices[i].y = height / 2 + (height * 0.4) * Math.sin(angle);
+		}
+	} else {
+		// Grid with jitter for larger graphs – prevents the pile-up that
+		// a circular start causes when n is large
+		const cols = Math.ceil(Math.sqrt(n * (width / height)));
+		const rows = Math.ceil(n / cols);
+		const cellW = width / (cols + 1);
+		const cellH = height / (rows + 1);
+		for (let i = 0; i < n; i++) {
+			const col = i % cols;
+			const row = Math.floor(i / cols);
+			graph.vertices[i].x = cellW * (col + 1) + (Math.random() - 0.5) * cellW * 0.5;
+			graph.vertices[i].y = cellH * (row + 1) + (Math.random() - 0.5) * cellH * 0.5;
+		}
 	}
 
-	// Build adjacency for quick lookup
+	// Build adjacency set for connected-pair lookups (unused for now, but cheap)
 	const adjacency = new Set<string>();
 	for (const edge of graph.edges) {
 		adjacency.add(`${edge.source}-${edge.target}`);
@@ -30,34 +52,48 @@ export function layoutGraph(graph: Graph, width = 1, height = 1): void {
 		}
 	}
 
-	const isConnected = (a: number, b: number) =>
-		adjacency.has(`${a}-${b}`) || adjacency.has(`${b}-${a}`);
+	// --- Force-directed simulation ---
+	const area = width * height;
+	// "k" is the ideal spring length – the natural distance between connected nodes
+	const k = Math.sqrt(area / n) * 0.85;
+	const k2 = k * k;
 
-	// Force-directed simulation
-	const iterations = Math.min(300, 50 + n * 5);
-	const idealLength = Math.sqrt((width * height) / n) * 0.8;
-	let temperature = width * 0.1;
-	const cooling = temperature / (iterations + 1);
+	// More iterations for larger graphs
+	const iterations = Math.min(600, 150 + n * 5);
+
+	// Temperature starts high (allows big moves) and cools to zero
+	let temperature = Math.max(width, height) * 0.25;
 
 	for (let iter = 0; iter < iterations; iter++) {
+		const progress = iter / iterations; // 0 → 1
 		const dx = new Float64Array(n);
 		const dy = new Float64Array(n);
 
-		// Repulsive forces between all pairs
+		// --- Repulsive forces (all pairs) ---
 		for (let i = 0; i < n; i++) {
 			for (let j = i + 1; j < n; j++) {
 				let deltaX = graph.vertices[i].x - graph.vertices[j].x;
 				let deltaY = graph.vertices[i].y - graph.vertices[j].y;
-				let dist = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
-				if (dist < 0.001) {
-					deltaX = (Math.random() - 0.5) * 0.01;
-					deltaY = (Math.random() - 0.5) * 0.01;
-					dist = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+				let dist2 = deltaX * deltaX + deltaY * deltaY;
+
+				if (dist2 < 1e-6) {
+					// Coincident – nudge apart randomly
+					deltaX = (Math.random() - 0.5) * k * 0.1;
+					deltaY = (Math.random() - 0.5) * k * 0.1;
+					dist2 = deltaX * deltaX + deltaY * deltaY;
 				}
 
-				const repulsive = (idealLength * idealLength) / dist;
-				const fx = (deltaX / dist) * repulsive;
-				const fy = (deltaY / dist) * repulsive;
+				const dist = Math.sqrt(dist2);
+
+				// Fruchterman-Reingold repulsion: k² / d
+				// With an extra boost at very short range to aggressively prevent overlaps
+				let repForce = k2 / dist;
+				if (dist < k * 0.5) {
+					repForce *= 3; // triple-strength when too close
+				}
+
+				const fx = (deltaX / dist) * repForce;
+				const fy = (deltaY / dist) * repForce;
 				dx[i] += fx;
 				dy[i] += fy;
 				dx[j] -= fx;
@@ -65,38 +101,79 @@ export function layoutGraph(graph: Graph, width = 1, height = 1): void {
 			}
 		}
 
-		// Attractive forces along edges
+		// --- Attractive forces (edges only) ---
 		for (const edge of graph.edges) {
 			const i = edge.source;
 			const j = edge.target;
 			const deltaX = graph.vertices[i].x - graph.vertices[j].x;
 			const deltaY = graph.vertices[i].y - graph.vertices[j].y;
 			const dist = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
-			if (dist < 0.001) continue;
+			if (dist < 1e-6) continue;
 
-			const attractive = (dist * dist) / idealLength;
-			const fx = (deltaX / dist) * attractive;
-			const fy = (deltaY / dist) * attractive;
+			// F_a = d² / k  (standard FR attractive)
+			const attForce = (dist * dist) / k;
+			const fx = (deltaX / dist) * attForce;
+			const fy = (deltaY / dist) * attForce;
 			dx[i] -= fx;
 			dy[i] -= fy;
 			dx[j] += fx;
 			dy[j] += fy;
 		}
 
-		// Apply displacements with temperature limiting
+		// --- Gravity toward centre (very gentle, just to keep it compact) ---
+		const gravity = 0.01 + 0.02 * progress; // slightly stronger later
+		const cx = width / 2;
+		const cy = height / 2;
 		for (let i = 0; i < n; i++) {
-			const disp = Math.sqrt(dx[i] * dx[i] + dy[i] * dy[i]);
-			if (disp < 0.001) continue;
-			const scale = Math.min(disp, temperature) / disp;
-			graph.vertices[i].x += dx[i] * scale;
-			graph.vertices[i].y += dy[i] * scale;
+			dx[i] += (cx - graph.vertices[i].x) * gravity;
+			dy[i] += (cy - graph.vertices[i].y) * gravity;
 		}
 
-		temperature -= cooling;
+		// --- Apply displacements clamped by temperature ---
+		for (let i = 0; i < n; i++) {
+			const disp = Math.sqrt(dx[i] * dx[i] + dy[i] * dy[i]);
+			if (disp < 1e-6) continue;
+			const clamped = Math.min(disp, temperature);
+			graph.vertices[i].x += (dx[i] / disp) * clamped;
+			graph.vertices[i].y += (dy[i] / disp) * clamped;
+		}
+
+		// Adaptive cooling: fast at start, slow in the middle, fast at end
+		temperature *= 1 - (iter + 1) / iterations;
+		temperature = Math.max(temperature, 0.01 * k);
 	}
 
-	// Normalize positions to [padding, 1-padding]
-	const padding = 0.08;
+	// --- Post-processing: overlap removal ---
+	// Push apart any vertices still closer than a minimum distance
+	const minDist = k * 0.35;
+	for (let pass = 0; pass < 10; pass++) {
+		let moved = false;
+		for (let i = 0; i < n; i++) {
+			for (let j = i + 1; j < n; j++) {
+				let deltaX = graph.vertices[i].x - graph.vertices[j].x;
+				let deltaY = graph.vertices[i].y - graph.vertices[j].y;
+				const dist = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+				if (dist < minDist && dist > 1e-6) {
+					const push = (minDist - dist) / 2;
+					const ux = deltaX / dist;
+					const uy = deltaY / dist;
+					graph.vertices[i].x += ux * push;
+					graph.vertices[i].y += uy * push;
+					graph.vertices[j].x -= ux * push;
+					graph.vertices[j].y -= uy * push;
+					moved = true;
+				} else if (dist <= 1e-6) {
+					graph.vertices[i].x += (Math.random() - 0.5) * minDist;
+					graph.vertices[j].y += (Math.random() - 0.5) * minDist;
+					moved = true;
+				}
+			}
+		}
+		if (!moved) break;
+	}
+
+	// --- Normalize to [padding, 1-padding] ---
+	const padding = 0.04;
 	let minX = Infinity, maxX = -Infinity;
 	let minY = Infinity, maxY = -Infinity;
 

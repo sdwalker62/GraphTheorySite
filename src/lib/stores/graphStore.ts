@@ -152,3 +152,6 @@ export const startVertex = writable<number>(0);
 export const currentStep = writable<number>(0);
 export const totalSteps = writable<number>(0);
 export const isPlaying = writable<boolean>(false);
+
+/** Playback speed in ms per step (lower = faster) */
+export const playbackSpeed = writable<number>(500);

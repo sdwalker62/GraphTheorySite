@@ -71,14 +71,15 @@ export function generateGraph(config: GraphConfig): Graph {
 	const { directed, weighted, allowCycles } = config;
 
 	// Determine target edge count based on density
-	// For sparse-to-moderate graphs: roughly 1.5n edges, but capped by max possible
+	// Scale down density as vertex count grows to keep graphs readable
 	const maxEdges = directed ? n * (n - 1) : (n * (n - 1)) / 2;
 	const acyclicMax = directed ? (n * (n - 1)) / 2 : n - 1; // DAG or tree
 	const effectiveMax = allowCycles ? maxEdges : acyclicMax;
 
-	// Target: between n-1 (connected) and ~2n edges for reasonable density
+	// Density multiplier tapers from ~1.5 at small n to ~1.15 at n=100
+	const densityMultiplier = Math.max(1.15, 1.5 - (n - 6) * 0.005);
 	const targetEdges = Math.min(
-		Math.max(n - 1, Math.floor(n * 1.5 + Math.random() * n * 0.5)),
+		Math.max(n - 1, Math.floor(n * densityMultiplier + Math.random() * n * 0.3)),
 		effectiveMax
 	);
 
