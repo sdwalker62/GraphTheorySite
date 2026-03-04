@@ -15,6 +15,7 @@
 	import type { Graph } from '$lib/graph/types';
 	import { runDFS } from '$lib/graph/dfs';
 	import { runBFS } from '$lib/graph/bfs';
+	import { runSCC } from '$lib/graph/scc';
 
 	let config = $state({ directed: false, weighted: false, allowCycles: true });
 	let graph: Graph | null = $state(null);
@@ -49,7 +50,7 @@
 
 	const currentAlgoInfo = $derived(algorithms.find((a) => a.name === current) ?? null);
 	const needsStartVertex = $derived(currentAlgoInfo?.requiresStartVertex ?? false);
-	const isImplemented = $derived(current === 'DFS' || current === 'BFS');
+	const isImplemented = $derived(current === 'DFS' || current === 'BFS' || current === 'SCC');
 
 	function select(name: Algorithm) {
 		selectedAlgorithm.set(name);
@@ -70,6 +71,9 @@
 				break;
 			case 'BFS':
 				steps = runBFS(graph, start);
+				break;
+			case 'SCC':
+				steps = runSCC(graph);
 				break;
 			default:
 				return;
