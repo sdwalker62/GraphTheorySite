@@ -141,6 +141,164 @@
 		else if (e.key === 'Escape') cancelEdit();
 	}
 
+	// --- SCC region computation ---
+
+	/** Distinct colors for SCC regions (HSL-based, semi-transparent) */
+	const sccPalette = [
+		'hsla(210, 80%, 60%, 0.18)',  // blue
+		'hsla(340, 75%, 55%, 0.18)',  // rose
+		'hsla(160, 70%, 45%, 0.18)',  // emerald
+		'hsla(45, 90%, 55%, 0.18)',   // amber
+		'hsla(280, 70%, 60%, 0.18)',  // purple
+		'hsla(15, 85%, 55%, 0.18)',   // orange
+		'hsla(190, 75%, 50%, 0.18)',  // cyan
+		'hsla(100, 60%, 45%, 0.18)',  // lime
+		'hsla(330, 65%, 50%, 0.18)',  // pink
+		'hsla(230, 70%, 55%, 0.18)',  // indigo
+		'hsla(60, 80%, 50%, 0.18)',   // yellow
+		'hsla(0, 70%, 55%, 0.18)',    // red
+	];
+
+	const sccStrokePalette = [
+		'hsla(210, 80%, 60%, 0.45)',
+		'hsla(340, 75%, 55%, 0.45)',
+		'hsla(160, 70%, 45%, 0.45)',
+		'hsla(45, 90%, 55%, 0.45)',
+		'hsla(280, 70%, 60%, 0.45)',
+		'hsla(15, 85%, 55%, 0.45)',
+		'hsla(190, 75%, 50%, 0.45)',
+		'hsla(100, 60%, 45%, 0.45)',
+		'hsla(330, 65%, 50%, 0.45)',
+		'hsla(230, 70%, 55%, 0.45)',
+		'hsla(60, 80%, 50%, 0.45)',
+		'hsla(0, 70%, 55%, 0.45)',
+	];
+
+	/** Convex hull via Andrew's monotone chain. Returns points in CCW order. */
+	function convexHull(points: { x: number; y: number }[]): { x: number; y: number }[] {
+		if (points.length <= 1) return [...points];
+		const sorted = [...points].sort((a, b) => a.x - b.x || a.y - b.y);
+		if (sorted.length === 2) return sorted;
+
+		const cross = (o: { x: number; y: number }, a: { x: number; y: number }, b: { x: number; y: number }) =>
+			(a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+
+		// Lower hull
+		const lower: { x: number; y: number }[] = [];
+		for (const p of sorted) {
+			while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) lower.pop();
+			lower.push(p);
+		}
+		// Upper hull
+		const upper: { x: number; y: number }[] = [];
+		for (const p of sorted.reverse()) {
+			while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) upper.pop();
+			upper.push(p);
+		}
+		lower.pop();
+		upper.pop();
+		return lower.concat(upper);
+	}
+
+	/** Offset a convex hull outward from centroid by `pad` pixels. */
+	function padHull(hull: { x: number; y: number }[], pad: number): { x: number; y: number }[] {
+		if (hull.length === 0) return [];
+		const cx = hull.reduce((s, p) => s + p.x, 0) / hull.length;
+		const cy = hull.reduce((s, p) => s + p.y, 0) / hull.length;
+		return hull.map((p) => {
+			const dx = p.x - cx;
+			const dy = p.y - cy;
+			const dist = Math.sqrt(dx * dx + dy * dy);
+			if (dist < 0.001) return { x: p.x + pad, y: p.y };
+			return { x: p.x + (dx / dist) * pad, y: p.y + (dy / dist) * pad };
+		});
+	}
+
+	/** Create a smooth closed SVG path through hull points using cubic Beziers. */
+	function smoothHullPath(hull: { x: number; y: number }[]): string {
+		if (hull.length === 0) return '';
+		if (hull.length === 1) {
+			// Circle placeholder — handled separately
+			return '';
+		}
+		if (hull.length === 2) {
+			// Capsule between two points
+			const [a, b] = hull;
+			const dx = b.x - a.x;
+			const dy = b.y - a.y;
+			const dist = Math.sqrt(dx * dx + dy * dy);
+			const r = nodeRadius + 8;
+			const nx = (-dy / dist) * r;
+			const ny = (dx / dist) * r;
+			return `M${a.x + nx},${a.y + ny} L${b.x + nx},${b.y + ny} A${r},${r} 0 0 1 ${b.x - nx},${b.y - ny} L${a.x - nx},${a.y - ny} A${r},${r} 0 0 1 ${a.x + nx},${a.y + ny} Z`;
+		}
+		// Catmull-Rom to cubic Bezier — smooth closed curve
+		const n = hull.length;
+		let d = `M${hull[0].x},${hull[0].y}`;
+		for (let i = 0; i < n; i++) {
+			const p0 = hull[(i - 1 + n) % n];
+			const p1 = hull[i];
+			const p2 = hull[(i + 1) % n];
+			const p3 = hull[(i + 2) % n];
+			// Catmull-Rom to Bezier conversion (tension = 0, alpha = 0.5)
+			const cp1x = p1.x + (p2.x - p0.x) / 6;
+			const cp1y = p1.y + (p2.y - p0.y) / 6;
+			const cp2x = p2.x - (p3.x - p1.x) / 6;
+			const cp2y = p2.y - (p3.y - p1.y) / 6;
+			d += ` C${cp1x},${cp1y} ${cp2x},${cp2y} ${p2.x},${p2.y}`;
+		}
+		d += ' Z';
+		return d;
+	}
+
+	/** Group vertices by their SCC component number. Returns Map<sccId, vertexIndices[]>. */
+	const sccGroups = $derived.by(() => {
+		const groups = new Map<number, number[]>();
+		if (!step || !step.data.scc || algorithm !== 'SCC' || !graph) return groups;
+		const sccArr = step.data.scc;
+		for (let i = 0; i < sccArr.length; i++) {
+			const val = sccArr[i];
+			if (typeof val === 'number') {
+				if (!groups.has(val)) groups.set(val, []);
+				groups.get(val)!.push(i);
+			}
+		}
+		return groups;
+	});
+
+	/** Precomputed SCC region paths for rendering. */
+	const sccRegions = $derived.by(() => {
+		if (!graph || sccGroups.size === 0) return [];
+		const pad = nodeRadius + 10;
+		const regions: { path: string; fill: string; stroke: string; cx?: number; cy?: number; r?: number }[] = [];
+		let idx = 0;
+		for (const [sccId, vertexIds] of sccGroups) {
+			const fill = sccPalette[idx % sccPalette.length];
+			const stroke = sccStrokePalette[idx % sccStrokePalette.length];
+			idx++;
+
+			const points = vertexIds.map((vi) => ({ x: vx(graph!.vertices[vi]), y: vy(graph!.vertices[vi]) }));
+
+			if (points.length === 1) {
+				// Single vertex SCC — draw a circle
+				regions.push({ path: '', fill, stroke, cx: points[0].x, cy: points[0].y, r: pad });
+			} else {
+				const hull = convexHull(points);
+				if (hull.length <= 2) {
+					// Collinear or 2 points — use capsule
+					const padded = hull; // smoothHullPath handles 2-point case with capsule shape
+					const capsulePath = smoothHullPath(padded);
+					regions.push({ path: capsulePath, fill, stroke });
+				} else {
+					const padded = padHull(hull, pad);
+					const pathD = smoothHullPath(padded);
+					regions.push({ path: pathD, fill, stroke });
+				}
+			}
+		}
+		return regions;
+	});
+
 	// --- Color helpers for algorithm visualization ---
 
 	function vertexFill(vid: number): string {
@@ -280,6 +438,30 @@
 					{/if}
 				</defs>
 
+				<!-- SCC Regions -->
+				{#each sccRegions as region}
+					{#if region.r != null && region.cx != null && region.cy != null}
+						<!-- Single vertex SCC: circle -->
+						<circle
+							cx={region.cx}
+							cy={region.cy}
+							r={region.r}
+							fill={region.fill}
+							stroke={region.stroke}
+							stroke-width="1.5"
+							stroke-dasharray="4 2"
+						/>
+					{:else if region.path}
+						<path
+							d={region.path}
+							fill={region.fill}
+							stroke={region.stroke}
+							stroke-width="1.5"
+							stroke-dasharray="4 2"
+						/>
+					{/if}
+				{/each}
+
 				<!-- Edges -->
 				{#each graph.edges as edge, i}
 					{@const sv = graph.vertices[edge.source]}
@@ -401,7 +583,7 @@
 
 			<!-- Legend when algorithm is running -->
 			{#if step}
-				<div class="absolute bottom-2 left-2 flex gap-3 text-xs">
+				<div class="absolute bottom-2 left-2 flex flex-wrap gap-3 text-xs">
 					<span class="flex items-center gap-1">
 						<span class="inline-block h-3 w-3 rounded-full bg-warning"></span> Active
 					</span>
@@ -414,6 +596,18 @@
 					<span class="flex items-center gap-1">
 						<span class="inline-block h-3 w-3 rounded-full bg-base-300"></span> Unvisited
 					</span>
+					{#if sccGroups.size > 0}
+						<span class="opacity-40">|</span>
+						{#each Array.from(sccGroups.keys()) as sccId, idx}
+							<span class="flex items-center gap-1">
+								<span
+									class="inline-block h-3 w-3 rounded-sm border"
+									style="background: {sccPalette[idx % sccPalette.length]}; border-color: {sccStrokePalette[idx % sccStrokePalette.length]};"
+								></span>
+								SCC {sccId}
+							</span>
+						{/each}
+					{/if}
 				</div>
 			{/if}
 		{/if}
