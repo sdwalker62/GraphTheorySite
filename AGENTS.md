@@ -1,3 +1,11 @@
+## Project Configuration
+
+- **Language**: TypeScript
+- **Package Manager**: npm
+- **Add-ons**: none
+
+---
+
 # Agents
 
 - This is a svelte based site which will be deployed on Netlify.
