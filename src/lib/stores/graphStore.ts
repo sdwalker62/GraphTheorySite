@@ -138,6 +138,10 @@ export const graphConfig = writable<GraphConfig>({
 
 export const selectedAlgorithm = writable<Algorithm | null>(null);
 
+import type { Graph } from '$lib/graph/types';
+
+export const graphData = writable<Graph | null>(null);
+
 export const currentStep = writable<number>(0);
 export const totalSteps = writable<number>(0);
 export const isPlaying = writable<boolean>(false);
