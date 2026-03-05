@@ -1,5 +1,8 @@
 import { writable } from 'svelte/store';
 
+export type Tab = 'graphs' | '2sat';
+export const activeTab = writable<Tab>('graphs');
+
 export type Algorithm =
 	| 'DFS'
 	| 'Topological Sort'
@@ -11,8 +14,7 @@ export type Algorithm =
 	| "Kruskal's"
 	| "Prim's"
 	| 'Ford-Fulkerson'
-	| 'Edmonds-Karp'
-	| '2-SAT';
+	| 'Edmonds-Karp';
 
 export interface AlgorithmInfo {
 	name: Algorithm;
@@ -110,14 +112,6 @@ export const algorithms: AlgorithmInfo[] = [
 		requiresDirected: true,
 		requiresWeighted: true,
 		requiresStartVertex: true,
-		requiresAcyclic: false
-	},
-	{
-		name: '2-SAT',
-		category: 'Satisfiability',
-		requiresDirected: true,
-		requiresWeighted: null,
-		requiresStartVertex: false,
 		requiresAcyclic: false
 	}
 ];

@@ -1,15 +1,42 @@
 <script lang="ts">
+	import { activeTab, type Tab } from '$lib/stores/graphStore';
+
 	let darkMode = $state(true);
+	let currentTab = $state<Tab>('graphs');
+
+	activeTab.subscribe((t) => (currentTab = t));
 
 	function toggleTheme() {
 		darkMode = !darkMode;
 		document.documentElement.setAttribute('data-theme', darkMode ? 'dark' : 'light');
 	}
+
+	function switchTab(tab: Tab) {
+		activeTab.set(tab);
+	}
 </script>
 
 <div class="navbar bg-base-200 px-4 shadow-sm">
-	<div class="flex-1">
+	<div class="flex-1 gap-6">
 		<span class="text-xl font-bold">Graph Theory Explorer</span>
+		<div role="tablist" class="tabs tabs-border">
+			<button
+				role="tab"
+				class="tab"
+				class:tab-active={currentTab === 'graphs'}
+				onclick={() => switchTab('graphs')}
+			>
+				Graph Algorithms
+			</button>
+			<button
+				role="tab"
+				class="tab"
+				class:tab-active={currentTab === '2sat'}
+				onclick={() => switchTab('2sat')}
+			>
+				2-SAT
+			</button>
+		</div>
 	</div>
 	<div class="flex-none">
 		<label class="swap swap-rotate btn btn-ghost btn-circle">
