@@ -20,6 +20,8 @@
 	import { runDijkstra } from '$lib/graph/dijkstra';
 	import { runBellmanFord } from '$lib/graph/bellmanford';
 	import { runFloydWarshall } from '$lib/graph/floydwarshall';
+	import { runKruskal } from '$lib/graph/kruskal';
+	import { runPrim } from '$lib/graph/prim';
 
 	let config = $state({ directed: false, weighted: false, allowCycles: true });
 	let graph: Graph | null = $state(null);
@@ -54,7 +56,7 @@
 
 	const currentAlgoInfo = $derived(algorithms.find((a) => a.name === current) ?? null);
 	const needsStartVertex = $derived(currentAlgoInfo?.requiresStartVertex ?? false);
-	const isImplemented = $derived(current === 'DFS' || current === 'BFS' || current === 'SCC' || current === 'Topological Sort' || current === "Dijkstra's" || current === 'Bellman-Ford' || current === 'Floyd-Warshall');
+	const isImplemented = $derived(current === 'DFS' || current === 'BFS' || current === 'SCC' || current === 'Topological Sort' || current === "Dijkstra's" || current === 'Bellman-Ford' || current === 'Floyd-Warshall' || current === "Kruskal's" || current === "Prim's");
 
 	function select(name: Algorithm) {
 		selectedAlgorithm.set(name);
@@ -90,6 +92,12 @@
 				break;
 			case 'Floyd-Warshall':
 				steps = runFloydWarshall(graph);
+				break;
+			case "Kruskal's":
+				steps = runKruskal(graph);
+				break;
+			case "Prim's":
+				steps = runPrim(graph);
 				break;
 			default:
 				return;
