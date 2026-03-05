@@ -352,6 +352,16 @@
 		if (step.treeEdges.has(ek) || step.treeEdges.has(ekRev)) return 1;
 		return edgeOpacity * 0.6;
 	}
+
+	/** Parse "flow/capacity" string from edge labels. */
+	function parseFlowFromLabel(label: string): { flow: number; capacity: number } | null {
+		const parts = label.split('/');
+		if (parts.length !== 2) return null;
+		const flow = parseInt(parts[0], 10);
+		const capacity = parseInt(parts[1], 10);
+		if (isNaN(flow) || isNaN(capacity)) return null;
+		return { flow, capacity };
+	}
 </script>
 
 <div class="relative flex h-full min-h-0 w-full flex-col rounded-box bg-base-100 border border-base-300 overflow-hidden">
@@ -481,6 +491,7 @@
 					{@const ekRev = edgeKey(edge.target, edge.source)}
 					{@const pathD = edgePath(pts.x1, pts.y1, pts.x2, pts.y2, curveOff)}
 					<path
+						id="edge-{edge.source}-{edge.target}"
 						d={pathD}
 						fill="none"
 						class={eStroke}
@@ -494,6 +505,50 @@
 									: 'url(#arrowhead)'
 							: undefined}
 					/>
+					<!-- Flow animation overlay -->
+					{#if isFlowAlgo && step}
+						{@const flowLabel = step.edgeLabels?.get(ek)}
+						{@const flowParsed = flowLabel ? parseFlowFromLabel(flowLabel) : null}
+						{@const flowRatio = flowParsed && flowParsed.capacity > 0 ? flowParsed.flow / flowParsed.capacity : 0}
+						{#if flowRatio > 0}
+							{@const dashLen = 4 + flowRatio * 8}
+							{@const gapLen = 4 + (1 - flowRatio) * 4}
+							{@const animDur = Math.max(0.5, 1.8 - flowRatio * 1.2)}
+							{@const pCount = Math.max(1, Math.min(3, Math.ceil(flowRatio * 3)))}
+							{@const pDur = Math.max(1.5, 4 - flowRatio * 2.5)}
+							{@const pRadius = Math.max(1.5, Math.min(4, nodeRadius * 0.3))}
+							<!-- Animated flowing dashes -->
+							<path
+								d={pathD}
+								fill="none"
+								class="stroke-info"
+								stroke-width={edgeStrokeBase * (1 + flowRatio * 2.5)}
+								opacity={0.25 + flowRatio * 0.35}
+								stroke-dasharray="{dashLen} {gapLen}"
+								stroke-linecap="round"
+							>
+								<animate
+									attributeName="stroke-dashoffset"
+									from="0"
+									to="{-(dashLen + gapLen)}"
+									dur="{animDur}s"
+									repeatCount="indefinite"
+								/>
+							</path>
+							<!-- Flow particles traveling along edge -->
+							{#each Array.from({length: pCount}) as _, pi}
+								<circle r={pRadius} class="fill-info" opacity={0.5 + flowRatio * 0.4}>
+									<animateMotion
+										dur="{pDur}s"
+										repeatCount="indefinite"
+										begin="{pi * pDur / pCount}s"
+									>
+										<mpath href="#edge-{edge.source}-{edge.target}" />
+									</animateMotion>
+								</circle>
+							{/each}
+						{/if}
+					{/if}
 					{#if edge.weight !== null}
 						{@const edgeLabel = step?.edgeLabels?.get(edgeKey(edge.source, edge.target)) ?? `${edge.weight}`}
 						<!-- svelte-ignore a11y_click_events_have_key_events -->
