@@ -152,3 +152,7 @@ export const isPlaying = writable<boolean>(false);
 
 /** Playback speed in ms per step (lower = faster) */
 export const playbackSpeed = writable<number>(500);
+
+/** Whether the central canvas shows the visualizer or the designer */
+export type GraphMode = 'view' | 'design';
+export const graphMode = writable<GraphMode>('view');
