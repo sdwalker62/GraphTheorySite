@@ -1,5 +1,6 @@
 <script lang="ts">
 	import AlgorithmPane from '$lib/components/AlgorithmPane.svelte';
+	import AlgorithmReference from '$lib/components/AlgorithmReference.svelte';
 	import ConfigPane from '$lib/components/ConfigPane.svelte';
 	import GraphCanvas from '$lib/components/GraphCanvas.svelte';
 	import GraphDesigner from '$lib/components/GraphDesigner.svelte';
@@ -57,11 +58,22 @@
 							</svg>
 							Design
 						</button>
+						<button
+							class="join-item btn btn-xs {gMode === 'reference' ? 'btn-primary' : 'btn-ghost'}"
+							onclick={() => graphMode.set('reference')}
+						>
+							<svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+								<path d="M12 6.042A8.967 8.967 0 0 0 6 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 0 1 6 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 0 1 6-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0 0 18 18a8.967 8.967 0 0 0-6 2.292m0-14.25v14.25" />
+							</svg>
+							Algorithm
+						</button>
 					</div>
 				</div>
 				<div class="flex-1 overflow-hidden p-4">
 					{#if gMode === 'design'}
 						<GraphDesigner />
+					{:else if gMode === 'reference'}
+						<AlgorithmReference />
 					{:else}
 						<GraphCanvas />
 					{/if}
