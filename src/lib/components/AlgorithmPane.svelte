@@ -17,6 +17,9 @@
 	import { runBFS } from '$lib/graph/bfs';
 	import { runSCC } from '$lib/graph/scc';
 	import { runTopoSort } from '$lib/graph/toposort';
+	import { runDijkstra } from '$lib/graph/dijkstra';
+	import { runBellmanFord } from '$lib/graph/bellmanford';
+	import { runFloydWarshall } from '$lib/graph/floydwarshall';
 
 	let config = $state({ directed: false, weighted: false, allowCycles: true });
 	let graph: Graph | null = $state(null);
@@ -51,7 +54,7 @@
 
 	const currentAlgoInfo = $derived(algorithms.find((a) => a.name === current) ?? null);
 	const needsStartVertex = $derived(currentAlgoInfo?.requiresStartVertex ?? false);
-	const isImplemented = $derived(current === 'DFS' || current === 'BFS' || current === 'SCC' || current === 'Topological Sort');
+	const isImplemented = $derived(current === 'DFS' || current === 'BFS' || current === 'SCC' || current === 'Topological Sort' || current === "Dijkstra's" || current === 'Bellman-Ford' || current === 'Floyd-Warshall');
 
 	function select(name: Algorithm) {
 		selectedAlgorithm.set(name);
@@ -78,6 +81,15 @@
 				break;
 			case 'Topological Sort':
 				steps = runTopoSort(graph);
+				break;
+			case "Dijkstra's":
+				steps = runDijkstra(graph, start);
+				break;
+			case 'Bellman-Ford':
+				steps = runBellmanFord(graph, start);
+				break;
+			case 'Floyd-Warshall':
+				steps = runFloydWarshall(graph);
 				break;
 			default:
 				return;
