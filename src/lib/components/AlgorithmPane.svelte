@@ -16,6 +16,7 @@
 	import { runDFS } from '$lib/graph/dfs';
 	import { runBFS } from '$lib/graph/bfs';
 	import { runSCC } from '$lib/graph/scc';
+	import { runTopoSort } from '$lib/graph/toposort';
 
 	let config = $state({ directed: false, weighted: false, allowCycles: true });
 	let graph: Graph | null = $state(null);
@@ -50,7 +51,7 @@
 
 	const currentAlgoInfo = $derived(algorithms.find((a) => a.name === current) ?? null);
 	const needsStartVertex = $derived(currentAlgoInfo?.requiresStartVertex ?? false);
-	const isImplemented = $derived(current === 'DFS' || current === 'BFS' || current === 'SCC');
+	const isImplemented = $derived(current === 'DFS' || current === 'BFS' || current === 'SCC' || current === 'Topological Sort');
 
 	function select(name: Algorithm) {
 		selectedAlgorithm.set(name);
@@ -74,6 +75,9 @@
 				break;
 			case 'SCC':
 				steps = runSCC(graph);
+				break;
+			case 'Topological Sort':
+				steps = runTopoSort(graph);
 				break;
 			default:
 				return;
