@@ -143,6 +143,9 @@ export const algorithmSteps = writable<AlgorithmStep[]>([]);
 /** Starting vertex selected by the user (for algorithms that need one) */
 export const startVertex = writable<number>(0);
 
+/** Sink vertex for network flow algorithms */
+export const sinkVertex = writable<number>(1);
+
 export const currentStep = writable<number>(0);
 export const totalSteps = writable<number>(0);
 export const isPlaying = writable<boolean>(false);

@@ -6,6 +6,7 @@
 		graphData,
 		algorithmSteps,
 		startVertex,
+		sinkVertex,
 		currentStep,
 		totalSteps,
 		isPlaying,
@@ -22,16 +23,19 @@
 	import { runFloydWarshall } from '$lib/graph/floydwarshall';
 	import { runKruskal } from '$lib/graph/kruskal';
 	import { runPrim } from '$lib/graph/prim';
+	import { runFordFulkerson, runEdmondsKarp } from '$lib/graph/maxflow';
 
 	let config = $state({ directed: false, weighted: false, allowCycles: true });
 	let graph: Graph | null = $state(null);
 	let start = $state(0);
+	let sink = $state(1);
 
 	graphConfig.subscribe((c) => {
 		config = { directed: c.directed, weighted: c.weighted, allowCycles: c.allowCycles };
 	});
 	graphData.subscribe((g) => (graph = g));
 	startVertex.subscribe((v) => (start = v));
+	sinkVertex.subscribe((v) => (sink = v));
 
 	// Group algorithms by category
 	const grouped = $derived.by(() => {
@@ -56,7 +60,8 @@
 
 	const currentAlgoInfo = $derived(algorithms.find((a) => a.name === current) ?? null);
 	const needsStartVertex = $derived(currentAlgoInfo?.requiresStartVertex ?? false);
-	const isImplemented = $derived(current === 'DFS' || current === 'BFS' || current === 'SCC' || current === 'Topological Sort' || current === "Dijkstra's" || current === 'Bellman-Ford' || current === 'Floyd-Warshall' || current === "Kruskal's" || current === "Prim's");
+	const needsSinkVertex = $derived(current === 'Ford-Fulkerson' || current === 'Edmonds-Karp');
+	const isImplemented = $derived(current === 'DFS' || current === 'BFS' || current === 'SCC' || current === 'Topological Sort' || current === "Dijkstra's" || current === 'Bellman-Ford' || current === 'Floyd-Warshall' || current === "Kruskal's" || current === "Prim's" || current === 'Ford-Fulkerson' || current === 'Edmonds-Karp');
 
 	function select(name: Algorithm) {
 		selectedAlgorithm.set(name);
@@ -99,6 +104,12 @@
 			case "Prim's":
 				steps = runPrim(graph);
 				break;
+			case 'Ford-Fulkerson':
+				steps = runFordFulkerson(graph, start, sink);
+				break;
+			case 'Edmonds-Karp':
+				steps = runEdmondsKarp(graph, start, sink);
+				break;
 			default:
 				return;
 		}
@@ -112,6 +123,11 @@
 	function onStartVertexChange(e: Event) {
 		const val = parseInt((e.currentTarget as HTMLSelectElement).value, 10);
 		startVertex.set(val);
+	}
+
+	function onSinkVertexChange(e: Event) {
+		const val = parseInt((e.currentTarget as HTMLSelectElement).value, 10);
+		sinkVertex.set(val);
 	}
 
 	// Playback speed control
@@ -178,13 +194,31 @@
 			{#if needsStartVertex || current === 'DFS'}
 				<div class="form-control">
 					<label class="label" for="start-vertex">
-						<span class="label-text text-sm">Start Vertex</span>
+						<span class="label-text text-sm">{needsSinkVertex ? 'Source Vertex' : 'Start Vertex'}</span>
 					</label>
 					<select
 						id="start-vertex"
 						class="select select-bordered select-sm w-full"
 						value={start}
 						onchange={onStartVertexChange}
+					>
+						{#each graph.vertices as v}
+							<option value={v.id}>{v.label}</option>
+						{/each}
+					</select>
+				</div>
+			{/if}
+
+			{#if needsSinkVertex}
+				<div class="form-control">
+					<label class="label" for="sink-vertex">
+						<span class="label-text text-sm">Sink Vertex</span>
+					</label>
+					<select
+						id="sink-vertex"
+						class="select select-bordered select-sm w-full"
+						value={sink}
+						onchange={onSinkVertexChange}
 					>
 						{#each graph.vertices as v}
 							<option value={v.id}>{v.label}</option>

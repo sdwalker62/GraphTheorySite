@@ -33,7 +33,8 @@
 	const nodeRadius = $derived(Math.max(5, Math.min(20, 160 / Math.sqrt(vertexCount))));
 	const edgeStrokeBase = $derived(Math.max(0.6, Math.min(1.5, 10 / Math.sqrt(vertexCount))));
 	const arrowSize = $derived(Math.max(3, Math.min(8, 50 / Math.sqrt(vertexCount))));
-	const weightBadgeW = $derived(Math.max(16, Math.min(28, 180 / Math.sqrt(vertexCount))));
+	const isFlowAlgo = $derived(algorithm === 'Ford-Fulkerson' || algorithm === 'Edmonds-Karp');
+	const weightBadgeW = $derived(Math.max(16, Math.min(isFlowAlgo ? 38 : 28, (isFlowAlgo ? 260 : 180) / Math.sqrt(vertexCount))));
 	const weightBadgeH = $derived(Math.max(11, Math.min(20, 130 / Math.sqrt(vertexCount))));
 	const weightFontSize = $derived(Math.max(6, Math.min(10, 65 / Math.sqrt(vertexCount))));
 	const labelFontSize = $derived(nodeRadius * 0.85);
@@ -494,6 +495,7 @@
 							: undefined}
 					/>
 					{#if edge.weight !== null}
+						{@const edgeLabel = step?.edgeLabels?.get(edgeKey(edge.source, edge.target)) ?? `${edge.weight}`}
 						<!-- svelte-ignore a11y_click_events_have_key_events -->
 						<!-- svelte-ignore a11y_no_static_element_interactions -->
 						<g
@@ -517,7 +519,7 @@
 								class="fill-base-content font-mono font-semibold pointer-events-none select-none"
 								font-size={weightFontSize}
 							>
-								{edge.weight}
+								{edgeLabel}
 							</text>
 						</g>
 					{/if}

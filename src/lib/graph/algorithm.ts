@@ -22,6 +22,9 @@ export interface AlgorithmStep {
 
 	/** Optional data table rows to display (e.g. dist[], prev[], pre[], post[]) */
 	data: Record<string, (string | number | null)[]>;
+
+	/** Optional per-edge labels (e.g. "flow/capacity" for network flow algorithms) */
+	edgeLabels?: Map<string, string>;
 }
 
 export function edgeKey(source: number, target: number): string {
